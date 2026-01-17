@@ -2,8 +2,6 @@ name: Build u-boot for GXBB
 
 on:
   workflow_dispatch:  # 允许手动触发
-  push:
-    branches: [ main ]
 
 jobs:
   build:
@@ -11,7 +9,7 @@ jobs:
     
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       with:
         submodules: recursive  # 重要：包含子模块
 
@@ -25,58 +23,51 @@ jobs:
       run: |
         cd u-boot
         
-        echo "=== 列出所有可用配置 ==="
-        find configs -name "*gxbb*defconfig" -o -name "*p200*defconfig" -o -name "*p212*defconfig" | sort
+        echo "=== 查看所有可用配置 ==="
+        ls configs/ | grep -i "gxbb\|p200\|p212" || echo "找不到配置，列出所有："
+        ls configs/ | head -20
         
-        echo "=== 尝试编译可能的配置 ==="
+        echo "=== 尝试编译 ==="
+        make distclean
         
-        # 尝试配置1
-        echo "尝试: gxbb_p200_1gbit_defconfig"
-        make distclean || true
-        if make gxbb_p200_1gbit_defconfig; then
-          make -j4 CROSS_COMPILE=arm-linux-gnueabihf-
-          cp u-boot.bin ../u-boot-gxbb-p200-1gbit.bin
-          echo "配置1编译成功"
+        # 尝试几个可能的配置
+        if [ -f configs/gxbb_p200_1gbit_defconfig ]; then
+          make gxbb_p200_1gbit_defconfig
+        elif [ -f configs/gxbb_p200_defconfig ]; then
+          make gxbb_p200_defconfig
+        elif [ -f configs/gxbb_p212_defconfig ]; then
+          make gxbb_p212_defconfig
+        elif [ -f configs/p200_defconfig ]; then
+          make p200_defconfig
         else
-          echo "配置1不存在，尝试下一个"
+          # 使用第一个找到的配置
+          FIRST_CONFIG=$(ls configs/ | head -1)
+          make $FIRST_CONFIG
         fi
         
-        # 尝试配置2
-        echo "尝试: gxbb_p200_defconfig"
-        make distclean || true
-        if make gxbb_p200_defconfig; then
-          make -j4 CROSS_COMPILE=arm-linux-gnueabihf-
-          cp u-boot.bin ../u-boot-gxbb-p200.bin
-          echo "配置2编译成功"
-        else
-          echo "配置2不存在，尝试下一个"
-        fi
+        make -j4 CROSS_COMPILE=arm-linux-gnueabihf-
         
-        # 尝试配置3
-        echo "尝试: gxbb_p212_defconfig"
-        make distclean || true
-        if make gxbb_p212_defconfig; then
-          make -j4 CROSS_COMPILE=arm-linux-gnueabihf-
-          cp u-boot.bin ../u-boot-gxbb-p212.bin
-          echo "配置3编译成功"
-        else
-          echo "配置3不存在"
-        fi
+        echo "=== 编译完成 ==="
+        ls -lh u-boot.bin
         
-        # 尝试配置4（备选）
-        echo "尝试: p200_defconfig"
-        make distclean || true
-        if make p200_defconfig; then
-          make -j4 CROSS_COMPILE=arm-linux-gnueabihf-
-          cp u-boot.bin ../u-boot-p200.bin
-          echo "配置4编译成功"
+        # 直接输出文件内容（base64编码）
+        echo "=== 文件base64编码（复制到下面解码） ==="
+        base64 u-boot.bin | head -20
+
+    - name: Output u-boot.bin
+      run: |
+        cd u-boot
+        if [ -f u-boot.bin ]; then
+          echo "文件大小：$(wc -c < u-boot.bin) bytes"
+          # 将文件保存到workspace以便后续步骤使用
+          cp u-boot.bin ${{ github.workspace }}/
         else
-          echo "配置4不存在"
+          echo "错误：未生成 u-boot.bin"
+          exit 1
         fi
 
-    - name: Upload Build Artifacts
-      uses: actions/upload-artifact@v3
+    - name: Upload u-boot.bin
+      uses: actions/upload-artifact@v4
       with:
-        name: u-boot-binaries
-        path: |
-          u-boot-*.bin
+        name: u-boot-binary
+        path: u-boot.bin
