@@ -1,0 +1,82 @@
+name: Build u-boot for GXBB
+
+on:
+  workflow_dispatch:  # 允许手动触发
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+      with:
+        submodules: recursive  # 重要：包含子模块
+
+    - name: Setup ARM Toolchain
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gcc-arm-linux-gnueabihf gcc-aarch64-linux-gnu
+        sudo apt-get install -y make git bison flex libssl-dev device-tree-compiler
+
+    - name: Build u-boot for GXBB (M13)
+      run: |
+        cd u-boot
+        
+        echo "=== 列出所有可用配置 ==="
+        find configs -name "*gxbb*defconfig" -o -name "*p200*defconfig" -o -name "*p212*defconfig" | sort
+        
+        echo "=== 尝试编译可能的配置 ==="
+        
+        # 尝试配置1
+        echo "尝试: gxbb_p200_1gbit_defconfig"
+        make distclean || true
+        if make gxbb_p200_1gbit_defconfig; then
+          make -j4 CROSS_COMPILE=arm-linux-gnueabihf-
+          cp u-boot.bin ../u-boot-gxbb-p200-1gbit.bin
+          echo "配置1编译成功"
+        else
+          echo "配置1不存在，尝试下一个"
+        fi
+        
+        # 尝试配置2
+        echo "尝试: gxbb_p200_defconfig"
+        make distclean || true
+        if make gxbb_p200_defconfig; then
+          make -j4 CROSS_COMPILE=arm-linux-gnueabihf-
+          cp u-boot.bin ../u-boot-gxbb-p200.bin
+          echo "配置2编译成功"
+        else
+          echo "配置2不存在，尝试下一个"
+        fi
+        
+        # 尝试配置3
+        echo "尝试: gxbb_p212_defconfig"
+        make distclean || true
+        if make gxbb_p212_defconfig; then
+          make -j4 CROSS_COMPILE=arm-linux-gnueabihf-
+          cp u-boot.bin ../u-boot-gxbb-p212.bin
+          echo "配置3编译成功"
+        else
+          echo "配置3不存在"
+        fi
+        
+        # 尝试配置4（备选）
+        echo "尝试: p200_defconfig"
+        make distclean || true
+        if make p200_defconfig; then
+          make -j4 CROSS_COMPILE=arm-linux-gnueabihf-
+          cp u-boot.bin ../u-boot-p200.bin
+          echo "配置4编译成功"
+        else
+          echo "配置4不存在"
+        fi
+
+    - name: Upload Build Artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: u-boot-binaries
+        path: |
+          u-boot-*.bin
